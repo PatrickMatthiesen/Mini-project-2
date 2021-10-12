@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "Mini-project-2/gRPC";
+
+package gRPC;
+
+service MessageService
+{
+    // The message the client wants to send
+    rpc Publish (Request) returns (Response);
+
+    // The message from a client, returned to each other client in the service. 
+    rpc Broadcast (Request) returns (Response);
+}
+
+message Request {
+    string message = 1;
+}
+
+message Response {
+    string message = 1;
+}
