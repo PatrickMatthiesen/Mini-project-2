@@ -7,16 +7,24 @@ package gRPC;
 service MessageService
 {
     // The message the client wants to send
-    rpc Publish (Request) returns (Response);
+    rpc Publish (PublishRequest) returns (PublishResponse);
+
+    // The 
+    rpc Join (JoinRequest) returns (JoinResponse);
 
     // The message from a client, returned to each other client in the service. 
-    rpc Broadcast (Request) returns (Response);
+    rpc Broadcast (BroadcastRequest) returns (BroadcastResponse);
 }
 
-message Request {
+message PublishRequest {
     string message = 1;
 }
 
-message Response {
+message JoinRequest{
+    string message = 1;
+    int64 lamportTime = 2;
+}
+
+message BroadcastResponse {
     string message = 1;
 }
