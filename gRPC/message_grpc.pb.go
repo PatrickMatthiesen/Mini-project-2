@@ -18,10 +18,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MessageServiceClient interface {
-	// The message the client wants to send
-	Publish(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
-	// The message from a client, returned to each other client in the service.
-	Broadcast(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error)
+	JoinChannel(ctx context.Context, in *Channel, opts ...grpc.CallOption) (MessageService_JoinChannelClient, error)
+	SendMessage(ctx context.Context, opts ...grpc.CallOption) (MessageService_SendMessageClient, error)
 }
 
 type messageServiceClient struct {
@@ -32,32 +30,78 @@ func NewMessageServiceClient(cc grpc.ClientConnInterface) MessageServiceClient {
 	return &messageServiceClient{cc}
 }
 
-func (c *messageServiceClient) Publish(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error) {
-	out := new(Response)
-	err := c.cc.Invoke(ctx, "/gRPC.MessageService/Publish", in, out, opts...)
+func (c *messageServiceClient) JoinChannel(ctx context.Context, in *Channel, opts ...grpc.CallOption) (MessageService_JoinChannelClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MessageService_ServiceDesc.Streams[0], "/gRPC.MessageService/JoinChannel", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &messageServiceJoinChannelClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
-func (c *messageServiceClient) Broadcast(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Response, error) {
-	out := new(Response)
-	err := c.cc.Invoke(ctx, "/gRPC.MessageService/Broadcast", in, out, opts...)
+type MessageService_JoinChannelClient interface {
+	Recv() (*Message, error)
+	grpc.ClientStream
+}
+
+type messageServiceJoinChannelClient struct {
+	grpc.ClientStream
+}
+
+func (x *messageServiceJoinChannelClient) Recv() (*Message, error) {
+	m := new(Message)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *messageServiceClient) SendMessage(ctx context.Context, opts ...grpc.CallOption) (MessageService_SendMessageClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MessageService_ServiceDesc.Streams[1], "/gRPC.MessageService/SendMessage", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &messageServiceSendMessageClient{stream}
+	return x, nil
+}
+
+type MessageService_SendMessageClient interface {
+	Send(*Message) error
+	CloseAndRecv() (*MessageAck, error)
+	grpc.ClientStream
+}
+
+type messageServiceSendMessageClient struct {
+	grpc.ClientStream
+}
+
+func (x *messageServiceSendMessageClient) Send(m *Message) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *messageServiceSendMessageClient) CloseAndRecv() (*MessageAck, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(MessageAck)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // MessageServiceServer is the server API for MessageService service.
 // All implementations must embed UnimplementedMessageServiceServer
 // for forward compatibility
 type MessageServiceServer interface {
-	// The message the client wants to send
-	Publish(context.Context, *Request) (*Response, error)
-	// The message from a client, returned to each other client in the service.
-	Broadcast(context.Context, *Request) (*Response, error)
+	JoinChannel(*Channel, MessageService_JoinChannelServer) error
+	SendMessage(MessageService_SendMessageServer) error
 	mustEmbedUnimplementedMessageServiceServer()
 }
 
@@ -65,11 +109,11 @@ type MessageServiceServer interface {
 type UnimplementedMessageServiceServer struct {
 }
 
-func (UnimplementedMessageServiceServer) Publish(context.Context, *Request) (*Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Publish not implemented")
+func (UnimplementedMessageServiceServer) JoinChannel(*Channel, MessageService_JoinChannelServer) error {
+	return status.Errorf(codes.Unimplemented, "method JoinChannel not implemented")
 }
-func (UnimplementedMessageServiceServer) Broadcast(context.Context, *Request) (*Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Broadcast not implemented")
+func (UnimplementedMessageServiceServer) SendMessage(MessageService_SendMessageServer) error {
+	return status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
 }
 func (UnimplementedMessageServiceServer) mustEmbedUnimplementedMessageServiceServer() {}
 
@@ -84,40 +128,51 @@ func RegisterMessageServiceServer(s grpc.ServiceRegistrar, srv MessageServiceSer
 	s.RegisterService(&MessageService_ServiceDesc, srv)
 }
 
-func _MessageService_Publish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Request)
-	if err := dec(in); err != nil {
-		return nil, err
+func _MessageService_JoinChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(Channel)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(MessageServiceServer).Publish(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/gRPC.MessageService/Publish",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MessageServiceServer).Publish(ctx, req.(*Request))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(MessageServiceServer).JoinChannel(m, &messageServiceJoinChannelServer{stream})
 }
 
-func _MessageService_Broadcast_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Request)
-	if err := dec(in); err != nil {
+type MessageService_JoinChannelServer interface {
+	Send(*Message) error
+	grpc.ServerStream
+}
+
+type messageServiceJoinChannelServer struct {
+	grpc.ServerStream
+}
+
+func (x *messageServiceJoinChannelServer) Send(m *Message) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _MessageService_SendMessage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MessageServiceServer).SendMessage(&messageServiceSendMessageServer{stream})
+}
+
+type MessageService_SendMessageServer interface {
+	SendAndClose(*MessageAck) error
+	Recv() (*Message, error)
+	grpc.ServerStream
+}
+
+type messageServiceSendMessageServer struct {
+	grpc.ServerStream
+}
+
+func (x *messageServiceSendMessageServer) SendAndClose(m *MessageAck) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *messageServiceSendMessageServer) Recv() (*Message, error) {
+	m := new(Message)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(MessageServiceServer).Broadcast(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/gRPC.MessageService/Broadcast",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MessageServiceServer).Broadcast(ctx, req.(*Request))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 // MessageService_ServiceDesc is the grpc.ServiceDesc for MessageService service.
@@ -126,16 +181,18 @@ func _MessageService_Broadcast_Handler(srv interface{}, ctx context.Context, dec
 var MessageService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "gRPC.MessageService",
 	HandlerType: (*MessageServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "Publish",
-			Handler:    _MessageService_Publish_Handler,
+			StreamName:    "JoinChannel",
+			Handler:       _MessageService_JoinChannel_Handler,
+			ServerStreams: true,
 		},
 		{
-			MethodName: "Broadcast",
-			Handler:    _MessageService_Broadcast_Handler,
+			StreamName:    "SendMessage",
+			Handler:       _MessageService_SendMessage_Handler,
+			ClientStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "gRPC/message.proto",
 }
