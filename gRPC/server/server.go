@@ -16,17 +16,11 @@ type Server struct {
 	channel map[string][]chan *gRPC.Message
 }
 
-// //sup
-// func (s *Server) GetTime(ctx context.Context, in *gRPC.GetMessage) (*gRPC.GetXXXReply, error) {
-// 	fmt.Printf("Received XXX request")
-// 	return &gRPC.GetXXXReply{Reply: "Your reply here"}, nil
-// }
-
 func main() {
-	fmt.Printf(".:server is starting:.")
+	fmt.Println(".:server is starting:.")
 
 	// Create listener tcp on port 5400
-	list, err := net.Listen("tcp", ":5400")
+	list, err := net.Listen("tcp", "localhost:5400")
 	if err != nil {
 		log.Fatalf("Failed to listen on port 5400: %v", err)
 	}
@@ -57,6 +51,16 @@ func (s *Server) JoinChannel(ch *gRPC.Channel, msgStream gRPC.MessageService_Joi
 	for {
 		select {
 		case <-msgStream.Context().Done():
+			fmt.Printf("User has disconnected")
+			msg := gRPC.Message{
+				Channel: &gRPC.Channel{
+					ChanName:    ch.ChanName,
+					SendersName: ch.SendersName},
+				Message:     "some message about disconecting",
+				Sender:      ch.SendersName,
+				LamportTime: 0,
+			}
+			msgStream.Send(&msg)
 			return nil
 		case msg := <-msgChannel:
 			fmt.Printf("GO ROUTINE (got message): %v \n", msg)

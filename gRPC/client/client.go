@@ -8,14 +8,17 @@ import (
 	"io"
 	"log"
 	"os"
+	// "os/signal"
+	// "syscall"
 
 	"github.com/DarkLordOfDeadstiny/Mini-project-2/gRPC"
 	"google.golang.org/grpc"
 )
 
-var channelname = flag.String("Channel", "default", "Shitty-Chat")
+var channelname = flag.String("Channel", "default", "Chitty-Chat")
 var sendername = flag.String("sender", "default", "Senders name")
-var tcpServer = flag.String("server", ":5400", "Tcp server")
+var tcpServer = flag.String("server", "localhost:5400", "Tcp server")
+var lamportTime = flag.Int64("time", 0, "lamportTimeStamp")
 
 func main() {
 	flag.Parse()
@@ -27,7 +30,7 @@ func main() {
 
 	conn, err := grpc.Dial(*tcpServer, opts...)
 	if err != nil {
-		log.Fatalf("something went wrong, big sad 👁👄👁 :c : %v", err)
+		log.Fatalf("Fail to Dail : %v", err)
 	}
 
 	defer conn.Close()
@@ -37,6 +40,7 @@ func main() {
 
 	fmt.Println("--- join channel ---")
 	go joinChannel(ctx, client)
+	// exitChannel(ctx, client)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -46,6 +50,7 @@ func main() {
 }
 
 func sendMessage(ctx context.Context, client gRPC.MessageServiceClient, message string) {
+	*lamportTime++
 	stream, err := client.SendMessage(ctx)
 	if err != nil {
 		log.Printf("Unable to send message😡: error: %v", err)
@@ -54,12 +59,13 @@ func sendMessage(ctx context.Context, client gRPC.MessageServiceClient, message 
 		Channel: &gRPC.Channel{
 			ChanName:    *channelname,
 			SendersName: *sendername},
-		Message: message,
-		Sender:  *sendername,
+		Message:     message,
+		Sender:      *sendername,
+		LamportTime: *lamportTime,
 	}
 	stream.Send(&msg)
 
-	ack, err := stream.CloseAndRecv()
+	ack, _ := stream.CloseAndRecv()
 	fmt.Printf("Message has been sent: %v \n", ack)
 
 }
@@ -72,7 +78,7 @@ func joinChannel(ctx context.Context, client gRPC.MessageServiceClient) {
 		log.Fatalf("client.JoinChannel(ctx, &channel) throws: %v", err)
 	}
 
-	fmt.Printf("Joined channel: %v \n", *&channelname)
+	fmt.Printf("Joined channel: %v \n", *channelname)
 
 	waitc := make(chan struct{})
 
@@ -88,10 +94,25 @@ func joinChannel(ctx context.Context, client gRPC.MessageServiceClient) {
 			}
 
 			if *sendername != in.Sender {
-				fmt.Printf("MESSAGE: (%v) -> %v \n", in.Sender, in.Message)
+				if in.LamportTime > *lamportTime {
+					*lamportTime = in.LamportTime + 1
+				} else {
+					*lamportTime++
+				}
+				fmt.Printf("MESSAGE: (%v) %v: %v \n", *lamportTime, in.Sender, in.Message)
 			}
 		}
 	}()
 
 	<-waitc
 }
+
+// func exitChannel(ctx context.Context, client gRPC.MessageServiceClient) {
+// 	ch := make(chan os.Signal)
+// 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+// 	go func() {
+// 		<-ch
+// 		sendMessage(ctx, client, "has disconnected")
+// 		os.Exit(1)
+// 	}()
+// }
