@@ -8,8 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
-	// "os/signal"
-	// "syscall"
+	"strings"
 
 	"github.com/DarkLordOfDeadstiny/Mini-project-2/gRPC"
 	"google.golang.org/grpc"
@@ -30,7 +29,7 @@ func main() {
 
 	conn, err := grpc.Dial(*tcpServer, opts...)
 	if err != nil {
-		log.Fatalf("Fail to Dail : %v", err)
+		log.Fatalf("Fail to Dial : %v", err)
 	}
 
 	defer conn.Close()
@@ -51,20 +50,26 @@ func main() {
 
 func sendMessage(ctx context.Context, client gRPC.MessageServiceClient, message string) {
 	*lamportTime++
-	stream, err := client.SendMessage(ctx)
+	stream, err := client.Send(ctx)
 	if err != nil {
 		log.Printf("Unable to send message😡: error: %v", err)
-	}
+	} 
 	msg := gRPC.Message{
-		Channel: &gRPC.Channel{
-			ChanName:    *channelname,
-			SendersName: *sendername},
+		// Channel: &gRPC.Channel{
+		// 	ChanName:    *channelname,
+		// 	SendersName: *sendername},
 		Message:     message,
 		Sender:      *sendername,
 		LamportTime: *lamportTime,
 	}
 	stream.Send(&msg)
-
+	//fun little easteregg. but its almost christmas?
+	if (strings.ToLower(msg.Message) == "bing") {
+		msg.Message = "bong"
+		msg.Sender = "Peter"
+		stream.Send(&msg)
+	}
+	
 	ack, _ := stream.CloseAndRecv()
 	fmt.Printf("Message has been sent: %v \n", ack)
 
@@ -72,8 +77,8 @@ func sendMessage(ctx context.Context, client gRPC.MessageServiceClient, message 
 
 func joinChannel(ctx context.Context, client gRPC.MessageServiceClient) {
 
-	channel := gRPC.Channel{ChanName: *channelname, SendersName: *sendername}
-	stream, err := client.JoinChannel(ctx, &channel)
+	joinreq := gRPC.JoinRequest{ChanName: *channelname, SendersName: *sendername}
+	stream, err := client.Join(ctx, &joinreq)
 	if err != nil {
 		log.Fatalf("client.JoinChannel(ctx, &channel) throws: %v", err)
 	}
@@ -107,12 +112,23 @@ func joinChannel(ctx context.Context, client gRPC.MessageServiceClient) {
 	<-waitc
 }
 
-// func exitChannel(ctx context.Context, client gRPC.MessageServiceClient) {
-// 	ch := make(chan os.Signal)
-// 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-// 	go func() {
-// 		<-ch
-// 		sendMessage(ctx, client, "has disconnected")
-// 		os.Exit(1)
-// 	}()
-// }
+func leaveMessage(client gRPC.MessageServiceClient, ctx context.Context) {
+
+	*lamportTime++
+	stream, err := client.Send(ctx)
+	if err != nil {
+		log.Printf("Unable to send leave message: error: %v", err)
+	}
+	msg := gRPC.Message{
+		Sender:      *sendername,
+		LamportTime: *lamportTime,
+	}
+		log.Printf("This user has left the chat: %v, (%v)", *sendername, *lamportTime )
+	
+
+	stream.Send(&msg)
+
+	ack, _ := stream.CloseAndRecv()
+	fmt.Printf("Message has been sent: %v \n", ack)
+
+}

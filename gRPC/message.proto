@@ -6,22 +6,31 @@ package gRPC;
 
 service MessageService
 {
-   rpc JoinChannel (Channel) returns (stream Message){}
-   rpc SendMessage (stream Message) returns (MessageAck){}
+   rpc Join (JoinRequest) returns (stream Message){}
+   rpc Leave (LeaveRequest) returns (LeaveResponse){}
+   rpc Send (stream Message) returns (MessageAck){}
 }
 
-message Channel {
+message JoinRequest {
     string chan_name = 1;
     string senders_name = 2;
+    int64 lamportTime = 3;
 }
 
 message Message {
     string sender = 1;
-    Channel channel = 2;
-    string message = 3;
-    int64 lamportTime = 4;
+    string message = 2;
+    int64 lamportTime = 3;
 }
 
 message MessageAck{
+    string status = 1;
+}
+
+message LeaveRequest {
+    string status = 1; 
+}
+
+message LeaveResponse{
     string status = 1;
 }
